@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users collection
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Clans collection
+    match /clans/{clanId} {
+      allow read: if true; // anyone can see clan info
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && request.auth.uid in resource.data.members;
+
+      // Clan subcollections
+      match /{subcollection}/{docId} {
+        allow read: if true; // everyone can see boss and messages
+        allow write: if request.auth != null &&
+          (subcollection == "messages" || subcollection == "boss") &&
+          request.auth.uid in get(/databases/$(database)/documents/clans/$(clanId)).data.members;
+      }
+    }
+  }
+}
