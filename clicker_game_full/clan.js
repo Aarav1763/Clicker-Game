@@ -200,24 +200,241 @@ window._firebase = { auth, db, initAuth };
   render();
 
   // ---------- Clan System (same as before) ----------
-  const clanNameInput = document.getElementById('clanNameInput');
-  const createClanBtn = document.getElementById('createClanBtn');
-  const joinClanInput = document.getElementById('joinClanInput');
-  const joinClanBtn = document.getElementById('joinClanBtn');
-  const leaveClanBtn = document.getElementById('leaveClanBtn');
-  const clanInfo = document.getElementById('clanInfo');
-  const attackBossBtn = document.getElementById('attackBossBtn');
-  const claimRewardBtn = document.getElementById('claimRewardBtn');
-  const bossInfo = document.getElementById('bossInfo');
-  const messagesEl = document.getElementById('messages');
-  const msgInput = document.getElementById('msgInput');
-  const sendMsgBtn = document.getElementById('sendMsgBtn');
+  // ---------- Clan System (fixed) ----------
+const clanNameInput = document.getElementById('clanNameInput');
+const createClanBtn = document.getElementById('createClanBtn');
+const joinClanInput = document.getElementById('joinClanInput');
+const joinClanBtn = document.getElementById('joinClanBtn');
+const leaveClanBtn = document.getElementById('leaveClanBtn');
+const clanInfo = document.getElementById('clanInfo');
+const attackBossBtn = document.getElementById('attackBossBtn');
+const claimRewardBtn = document.getElementById('claimRewardBtn');
+const bossInfo = document.getElementById('bossInfo');
+const messagesEl = document.getElementById('messages');
+const msgInput = document.getElementById('msgInput');
+const sendMsgBtn = document.getElementById('sendMsgBtn');
 
-  let currentClanId = null;
-  let clanUnsub = null, bossUnsub = null, msgsUnsub = null;
-  let lastAttack = 0;
+let currentClanId = null;
+let clanUnsub = null, bossUnsub = null, msgsUnsub = null;
+let lastAttack = 0;
 
-  function alertError(e) { console.error(e); }
+function alertError(e) { console.error(e); }
+
+// Create a clan
+createClanBtn.addEventListener('click', async () => {
+  const name = clanNameInput.value.trim();
+  if (!name) return;
+  try {
+    const doc = await db.collection('clans').add({
+      name,
+      leader: uid,
+      members: [uid],
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await joinClan(doc.id);
+  } catch (e) {
+    alertError(e);
+  }
+});
+
+// Join a clan
+joinClanBtn.addEventListener('click', async () => {
+  const id = joinClanInput.value.trim();
+  if (!id) return;
+  try {
+    await joinClan(id);
+  } catch (e) {
+    alertError(e);
+  }
+});
+
+// Leave clan
+leaveClanBtn.addEventListener('click', async () => {
+  if (!currentClanId) return;
+  try {
+    const ref = db.collection('clans').doc(currentClanId);
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return;
+      const data = snap.data();
+      const members = (data.members || []).filter(m => m !== uid);
+      let leader = data.leader;
+      if (leader === uid) leader = members[0] || null;
+      tx.update(ref, { members, leader });
+    });
+    unsubscribeClan();
+  } catch (e) {
+    alertError(e);
+  }
+});
+
+function unsubscribeClan() {
+  if (clanUnsub) clanUnsub();
+  if (bossUnsub) bossUnsub();
+  if (msgsUnsub) msgsUnsub();
+  currentClanId = null;
+  clanInfo.textContent = 'No clan';
+  bossInfo.textContent = 'No boss';
+  messagesEl.innerHTML = '';
+}
+
+// Subscribe to a clan
+function subscribeToClan(id) {
+  unsubscribeClan();
+  const ref = db.collection('clans').doc(id);
+
+  // Display clan info
+  clanUnsub = ref.onSnapshot(snap => {
+    if (!snap.exists) return;
+    const data = snap.data();
+    clanInfo.innerHTML = `
+      Clan: ${data.name} <br/>
+      Leader: ${data.leader} <br/>
+      Members: ${data.members.join(', ')} <br/>
+      ID: ${snap.id}`;
+  });
+
+  // Boss setup with 24-hour reset
+  const bossRef = ref.collection('boss').doc('current');
+  bossUnsub = bossRef.onSnapshot(async snap => {
+    let reset = false;
+    if (!snap.exists) reset = true;
+    else {
+      const b = snap.data();
+      if (!b.expiresAt || b.expiresAt.toDate() < new Date()) reset = true;
+    }
+
+    if (reset) {
+      await bossRef.set({
+        hp: 1000,
+        maxHp: 1000,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        expiresAt: firebase.firestore.Timestamp.fromDate(new Date(Date.now() + 24*3600*1000)),
+        soulsReward: 50,
+        totalDamage: 0
+      });
+    } else {
+      const b = snap.data();
+      bossInfo.innerHTML = `HP: ${b.hp} / ${b.maxHp} <br/> Souls Reward: ${b.soulsReward || 0}`;
+    }
+  });
+
+  // Messages
+  msgsUnsub = ref.collection('messages')
+    .orderBy('createdAt', 'asc')
+    .limit(100)
+    .onSnapshot(snap => {
+      messagesEl.innerHTML = '';
+      snap.docs.forEach(d => {
+        const m = d.data();
+        const time = m.createdAt ? new Date(m.createdAt.toMillis()).toLocaleTimeString() : '';
+        const el = document.createElement('div');
+        el.textContent = `[${time}] ${m.uid.substring(0,6)}: ${m.text}`;
+        messagesEl.appendChild(el);
+      });
+    });
+
+  currentClanId = id;
+}
+
+// Join clan helper
+async function joinClan(id) {
+  const ref = db.collection('clans').doc(id);
+  await db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw 'Clan not found';
+    const data = snap.data();
+    const members = data.members || [];
+    if (!members.includes(uid)) members.push(uid);
+    tx.update(ref, { members });
+  });
+  subscribeToClan(id);
+}
+
+// Attack Boss
+attackBossBtn.addEventListener('click', async () => {
+  if (!currentClanId) return;
+  const now = Date.now();
+  if (now - lastAttack < 1500) return;
+  lastAttack = now;
+
+  const bossRef = db.collection('clans').doc(currentClanId).collection('boss').doc('current');
+  const damage = Math.max(1, Math.floor(clickDmg + dps * 0.2));
+
+  try {
+    await db.runTransaction(async tx => {
+      const bSnap = await tx.get(bossRef);
+      if (!bSnap.exists) throw "No boss active";
+      const b = bSnap.data();
+
+      const pRef = bossRef.collection("players").doc(uid);
+      const pSnap = await tx.get(pRef);
+      const existingDamage = pSnap.exists ? (pSnap.data().damage || 0) : 0;
+
+      const newHp = Math.max(0, b.hp - damage);
+
+      tx.update(bossRef, {
+        hp: newHp,
+        totalDamage: (b.totalDamage || 0) + damage
+      });
+
+      tx.set(pRef, { uid, damage: existingDamage + damage }, { merge:true });
+
+      if (newHp === 0) {
+        tx.update(bossRef, { finishedAt: firebase.firestore.FieldValue.serverTimestamp() });
+      }
+    });
+  } catch (e) {
+    alertError(e);
+  }
+});
+
+// Claim reward
+claimRewardBtn.addEventListener('click', async () => {
+  if (!currentClanId) return;
+
+  const bossRef = db.collection("clans").doc(currentClanId).collection("boss").doc("current");
+  try {
+    await db.runTransaction(async tx => {
+      const bSnap = await tx.get(bossRef);
+      if (!bSnap.exists) throw "No boss";
+      const b = bSnap.data();
+      if (!b.finishedAt) throw "Boss not finished";
+
+      const pRef = bossRef.collection("players").doc(uid);
+      const pSnap = await tx.get(pRef);
+      if (!pSnap.exists) throw "No damage recorded";
+      const pd = pSnap.data();
+      if (pd.claimed) throw "Already claimed";
+
+      const playerDamage = pd.damage || 0;
+      const totalDamage = b.totalDamage || 1;
+      const reward = Math.floor((playerDamage / totalDamage) * (b.soulsReward || 0));
+
+      const userRef = db.collection("users").doc(uid);
+      const userSnap = await tx.get(userRef);
+      const currentSouls = userSnap.exists ? (userSnap.data().souls || 0) : 0;
+
+      tx.update(pRef, { claimed:true, rewarded: reward });
+      tx.set(userRef, { souls: currentSouls + reward }, { merge:true });
+    });
+  } catch(e) { alertError(e); }
+});
+
+// Send message
+sendMsgBtn.addEventListener('click', async () => {
+  if(!currentClanId) return;
+  const txt = msgInput.value.trim();
+  if(!txt) return;
+  try {
+    await db.collection('clans').doc(currentClanId).collection('messages').add({
+      uid, text: txt,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    msgInput.value = '';
+  } catch(e) { alertError(e); }
+});
+
 
   // ... All previous clan logic remains the same, unchanged ...
 
@@ -225,3 +442,4 @@ window._firebase = { auth, db, initAuth };
   setInterval(saveLocal, 30000);
 
 })();
+
