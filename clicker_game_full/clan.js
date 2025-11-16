@@ -1,4 +1,8 @@
-// Firebase CONFIG
+// clan.js — Full Clicker Game + Stages + Upgrades + Clan System + Bosses
+
+// -----------------------------------------------------------
+// 1. Firebase CONFIG
+// -----------------------------------------------------------
 const firebaseConfig = {
   apiKey: "AIzaSyCr-8FgUsREG3_Ruw_fCXnblUGlpUAE2z8",
   authDomain: "clicker-heroes-ecbfe.firebaseapp.com",
@@ -9,12 +13,13 @@ const firebaseConfig = {
   measurementId: "G-H5C31LEE5X"
 };
 
-// Initialize Firebase
+// -----------------------------------------------------------
+// 2. Initialize Firebase
+// -----------------------------------------------------------
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 
-// Anonymous auth
 async function initAuth() {
   const userCredential = await auth.signInAnonymously();
   return userCredential.user.uid;
@@ -22,7 +27,9 @@ async function initAuth() {
 
 window._firebase = { auth, db, initAuth };
 
-// Clan system
+// -----------------------------------------------------------
+// 3. Main Game & Clan logic
+// -----------------------------------------------------------
 (async function () {
   let uid;
   try {
@@ -34,6 +41,119 @@ window._firebase = { auth, db, initAuth };
     return;
   }
 
+  // ---------- Player / Game state ----------
+  let gold = Number(localStorage.getItem('gold') || 0);
+  let souls = Number(localStorage.getItem('souls') || 0);
+  let clickDmg = Number(localStorage.getItem('clickDmg') || 1);
+  let dps = Number(localStorage.getItem('dps') || 0);
+  let stage = Number(localStorage.getItem('stage') || 1);
+
+  const goldEl = document.getElementById('gold');
+  const soulsEl = document.getElementById('souls');
+  const clickDmgEl = document.getElementById('clickDmg');
+  const dpsEl = document.getElementById('dps');
+  const hpText = document.getElementById('hpText');
+  const monsterNameEl = document.getElementById('monsterName');
+
+  let monsterMaxHp = Number(localStorage.getItem('monsterMaxHp') || 50);
+  let monsterHp = Number(localStorage.getItem('monsterHp') || monsterMaxHp);
+  let monsterName = localStorage.getItem('monsterName') || 'Slime';
+
+  let costClickUpgrade = Number(localStorage.getItem('costClickUpgrade') || 20);
+  let costDpsUnit = Number(localStorage.getItem('costDpsUnit') || 30);
+
+  function saveLocal() {
+    localStorage.setItem('gold', gold);
+    localStorage.setItem('souls', souls);
+    localStorage.setItem('clickDmg', clickDmg);
+    localStorage.setItem('dps', dps);
+    localStorage.setItem('monsterHp', monsterHp);
+    localStorage.setItem('monsterMaxHp', monsterMaxHp);
+    localStorage.setItem('monsterName', monsterName);
+    localStorage.setItem('stage', stage);
+    localStorage.setItem('costClickUpgrade', costClickUpgrade);
+    localStorage.setItem('costDpsUnit', costDpsUnit);
+    render();
+  }
+
+  function loadLocal() {
+    gold = Number(localStorage.getItem('gold') || 0);
+    souls = Number(localStorage.getItem('souls') || 0);
+    clickDmg = Number(localStorage.getItem('clickDmg') || 1);
+    dps = Number(localStorage.getItem('dps') || 0);
+    stage = Number(localStorage.getItem('stage') || 1);
+    monsterMaxHp = Number(localStorage.getItem('monsterMaxHp') || 50);
+    monsterHp = Number(localStorage.getItem('monsterHp') || monsterMaxHp);
+    monsterName = localStorage.getItem('monsterName') || 'Slime';
+    costClickUpgrade = Number(localStorage.getItem('costClickUpgrade') || 20);
+    costDpsUnit = Number(localStorage.getItem('costDpsUnit') || 30);
+    render();
+  }
+
+  function render() {
+    goldEl.textContent = gold;
+    soulsEl.textContent = souls;
+    clickDmgEl.textContent = clickDmg;
+    dpsEl.textContent = dps;
+    hpText.textContent = `${monsterHp} / ${monsterMaxHp}`;
+    monsterNameEl.textContent = `${monsterName} (Stage ${stage})`;
+    document.getElementById('costClickUpgrade').textContent = costClickUpgrade;
+    document.getElementById('costDpsUnit').textContent = costDpsUnit;
+  }
+
+  // ---------- Combat ----------
+  document.getElementById('attackBtn').addEventListener('click', () => {
+    monsterHp -= clickDmg;
+    if (monsterHp <= 0) defeatMonster();
+    render();
+  });
+
+  setInterval(() => {
+    if (dps > 0) {
+      monsterHp -= dps;
+      if (monsterHp <= 0) defeatMonster();
+      render();
+    }
+  }, 1000);
+
+  function defeatMonster() {
+    gold += Math.max(1, Math.floor(monsterMaxHp / 10));
+    if (Math.random() < 0.05) souls += 1;
+
+    stage += 1;
+    monsterMaxHp = Math.floor(monsterMaxHp * 1.12) + 5;
+    monsterHp = monsterMaxHp;
+    monsterName = `Monster Lv${stage}`;
+    render();
+  }
+
+  // ---------- Upgrades ----------
+  document.getElementById('buyClickUpgrade').addEventListener('click', () => {
+    if (gold >= costClickUpgrade) {
+      gold -= costClickUpgrade;
+      clickDmg += 1;
+      costClickUpgrade = Math.floor(costClickUpgrade * 1.5);
+      render();
+    }
+  });
+
+  document.getElementById('buyDpsUnit').addEventListener('click', () => {
+    if (gold >= costDpsUnit) {
+      gold -= costDpsUnit;
+      dps += 1;
+      costDpsUnit = Math.floor(costDpsUnit * 1.4);
+      render();
+    }
+  });
+
+  document.getElementById('saveBtn').addEventListener('click', saveLocal);
+  document.getElementById('loadBtn').addEventListener('click', loadLocal);
+
+  render();
+
+  // -----------------------------------------------------------
+  // 4. Clan System (Fixed)
+  // -----------------------------------------------------------
   const clanNameInput = document.getElementById('clanNameInput');
   const createClanBtn = document.getElementById('createClanBtn');
   const joinClanInput = document.getElementById('joinClanInput');
@@ -176,7 +296,7 @@ window._firebase = { auth, db, initAuth };
     lastAttack = now;
 
     const bossRef = db.collection('clans').doc(currentClanId).collection('boss').doc('current');
-    const damage = Math.max(1, 1); // replace with clickDmg + dps if needed
+    const damage = Math.max(1, clickDmg + dps*0.2);
 
     try {
       await db.runTransaction(async tx => {
@@ -200,7 +320,6 @@ window._firebase = { auth, db, initAuth };
         const b = bSnap.data();
         if(!b.finishedAt) throw "Boss not finished yet";
         const reward = b.soulsReward || 0;
-        // Add to player's souls (simplified)
         alert(`You claimed ${reward} souls!`);
       });
     } catch(e){ alertError(e); }
@@ -232,5 +351,8 @@ window._firebase = { auth, db, initAuth };
       }
     },1000);
   }
+
+  // Auto-save
+  setInterval(saveLocal,30000);
 
 })();
