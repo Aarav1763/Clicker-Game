@@ -1,1 +1,1 @@
-Download file and open index.html
+Download folder from <code> on top right of page, extract, and open index.html
