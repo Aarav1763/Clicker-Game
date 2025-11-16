@@ -311,19 +311,27 @@ window._firebase = { auth, db, initAuth };
   });
 
   claimRewardBtn.addEventListener('click', async () => {
-    if (!currentClanId) return;
-    const bossRef = db.collection('clans').doc(currentClanId).collection('boss').doc('current');
-    try {
-      await db.runTransaction(async tx => {
-        const bSnap = await tx.get(bossRef);
-        if(!bSnap.exists) throw "No boss";
-        const b = bSnap.data();
-        if(!b.finishedAt) throw "Boss not finished yet";
-        const reward = b.soulsReward || 0;
-        alert(`You claimed ${reward} souls!`);
-      });
-    } catch(e){ alertError(e); }
-  });
+  if (!currentClanId) return;
+  const bossRef = db.collection('clans').doc(currentClanId).collection('boss').doc('current');
+  try {
+    await db.runTransaction(async tx => {
+      const bSnap = await tx.get(bossRef);
+      if(!bSnap.exists) throw "No boss";
+      const b = bSnap.data();
+      if(!b.finishedAt) throw "Boss not finished yet";
+
+      const reward = b.soulsReward || 0;
+
+      // Add souls to local player
+      souls += reward;
+      localStorage.setItem('souls', souls);
+      render();
+
+      alert(`You claimed ${reward} souls!`);
+    });
+  } catch(e){ alertError(e); }
+});
+
 
   sendMsgBtn.addEventListener('click', async () => {
     if(!currentClanId) return;
@@ -356,3 +364,4 @@ window._firebase = { auth, db, initAuth };
   setInterval(saveLocal,30000);
 
 })();
+
