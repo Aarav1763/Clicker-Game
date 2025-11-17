@@ -4,7 +4,7 @@
 // Firestore-backed clans. Set to `null` to run locally without Firebase.
 // -----------------------------------------------------------------------------
 
-const const firebaseConfig = {
+ const firebaseConfig = {
   apiKey: "AIzaSyCr-8FgUsREG3_Ruw_fCXnblUGlpUAE2z8",
   authDomain: "clicker-heroes-ecbfe.firebaseapp.com",
   projectId: "clicker-heroes-ecbfe",
@@ -12,7 +12,7 @@ const const firebaseConfig = {
   messagingSenderId: "328719492430",
   appId: "1:328719492430:web:4cf12fce6912c44a62ea1f",
   measurementId: "G-H5C31LEE5X"
-}; = null; // <-- REPLACE this with your Firebase config object to enable online clans
+}; 
 
 let auth = null, db = null, firebaseAvailable = false;
 
